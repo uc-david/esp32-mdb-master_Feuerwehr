@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <functional>
+#include <vector>
 // LCD over I2C communication
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
@@ -42,7 +43,6 @@ ESPTelnet telnet;
 
 // Include Library
 #include <SimpleCLI.h>
-
 // Create CLI Object
 SimpleCLI cli;
 
@@ -50,16 +50,38 @@ SimpleCLI cli;
 Command wifi;
 Command reboot;
 
+
+
+#include <AsyncMQTT.h>
+#include "secrets.h"
+
+
+#ifdef ARDUINO_ARCH_ESP32
+      #include <soc/soc.h>
+      #include "soc/rtc_cntl_reg.h"
+#endif
+
+
+
+AsyncMQTT mqttClient(MQTT_USER,MQTT_PASS,MQTT_HOST,MQTT_PORT);
+
+
+
+
 const char *ntpServer = "de.pool.ntp.org";
 const long gmtOffset_sec = 0;
 const int daylightOffset_sec = 0;
-
-bool freeVend = 0;
-uint16_t prod = 0;
+bool freeVend = 0; 
+bool aktivmqtt = false;
+uint8_t requ_dispenser = 0;
+uint16_t prod = 0; 
+uint16_t produktmqtt =0;
+float pricemqtt = 0.0;
+String pricemqttstr = "";
 uint32_t funds = 0;
 String input = "";
 uint8_t newByte = '\0';
-
+  bool manualProduct = false;
 // MDB functions and callback
 // variable containing the product number to be dispensed
 uint8_t dispenser = 0;
@@ -109,9 +131,9 @@ private:
 
   
   // product select made by customer
-  bool productSelect = false; //set true when selection was made
-  uint8_t requ_dispenser = 0; //which number of product has been selected
-  bool manualProduct = false;
+  //aktivmqtt=false; //set true when selection was made
+   //which number of product has been selected
+
 
 public:
   // helper function giving the total available credit
@@ -153,7 +175,7 @@ public:
     lcdWrite(0, 2, msg);
     lcdWrite(0, 3, &msg[16]);
     // TODO: clear the screen after duration
-    Serial.printf("for %llu ms",  duration);
+     Serial.printf("for %d ms\n\r",  duration);
   }
 
   // event fired when a revalue is requested by a card reader
@@ -168,11 +190,11 @@ public:
       return false;
     Serial.print("Start Session Requested on ");
     printCLI(dev->getDeviceName());
-    Serial.printf("\tFunds Available:  %.2f\r\n", dev->getCurrentFunds().getValue());
+    Serial.printf("\tFunds Available:  %.2f\r\n", getTotalFunds());
     sessionDev = dev;
     lcdWrite(0, 0, "Sitzung aktiv:");
     char line2[20];
-    sprintf(line2, "Guthaben:  %.2f", dev->getCurrentFunds().getValue());
+    //sprintf(line2, "Guthaben:  %.2f", dev->getCurrentFunds().getValue());
     lcdWrite(0, 1, line2);
     return true;
   }
@@ -182,7 +204,7 @@ public:
   {
     if (sessionDev)
     {
-      productSelect = false;
+      aktivmqtt=false;
       printCLI("End of Session");
       sessionDev = nullptr;
       manualProduct = false;
@@ -268,12 +290,13 @@ public:
     if (dev->getCurrentFunds().getValue() > 0)
     {
       // handle product selection
-      if (productSelect)
+      if (aktivmqtt)
       {
         switch (requ_dispenser)
         {
         case 1: // Peanuts
-          myProduct = mdbProduct(requ_dispenser, "Peanuts", mdbCurrency(0.20f, 1, 2));
+          myProduct = mdbProduct(requ_dispenser, "Peanuts", mdbCurrency(pricemqtt, 100, 2));
+          
           break;
 
         case 2: // Ritter Sport
@@ -293,6 +316,7 @@ public:
           Serial.printf("Requesting Product: %s on %s for %.2f\r\n", myProduct.getName(), dev->getDeviceName(), myProduct.getPrice()->getValue());
           sessionDev = dev;
           dispenser = requ_dispenser;
+          manualProduct = true;
           return PaymentActions::REQUEST_PRODUCT;
         }
         else
@@ -303,7 +327,7 @@ public:
           }
           dispenser = 0;
 
-          productSelect = false;
+          aktivmqtt=false;
           printCLI("End of Session");
           sessionDev = nullptr;
           manualProduct = false;
@@ -318,13 +342,13 @@ public:
     if (dev == sessionDev)
     {
       // handle product selection
-      if (productSelect)
+      if (aktivmqtt)
       {
         //determine which selection means which product
         switch (requ_dispenser)
         {
         case 1: // Peanuts
-          myProduct = mdbProduct(requ_dispenser, "Peanuts", mdbCurrency(0.20f, 1, 2));
+          myProduct = mdbProduct(requ_dispenser, "Peanuts", mdbCurrency(pricemqtt, 100, 2));
           break;
 
         case 2: // Ritter Sport
@@ -338,7 +362,8 @@ public:
         default:
           break;
         }
-        Serial.printf("Requesting Product: %s on %s for %.2f\r\n", myProduct.getName(), dev->getDeviceName(), myProduct.getPrice()->getValue());
+       // Serial.printf("Requesting Product: %s on %s for %.2f\r\n", myProduct.getName(), dev->getDeviceName(), myProduct.getPrice()->getValue());
+       manualProduct = true;
         return PaymentActions::REQUEST_PRODUCT;
       }
     }
@@ -446,7 +471,7 @@ void MDBRUN(void *args)
   mdbMaster::init();
   MDBDevice_Cashless_1.registerPaymentInterface(&myInterface);
   // MDBDevice_Cashless_2.registerPaymentInterface(&myInterface);
-  MDBDevice_Changer.registerPaymentInterface(&myInterface);
+  // MDBDevice_Changer.registerPaymentInterface(&myInterface);
   while (1)
   {
     mdbMaster::handleDevices();
@@ -597,6 +622,25 @@ void setup()
   WiFi.setHostname("ESP32-MDB-Master");
   WiFi.begin();
 
+
+
+#if defined(ESP32)
+            WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+#endif
+
+ mqttClient.begin(SSID,WIFI_PASS);
+      
+      mqttClient.subscribe("/Automat/Preis");
+      mqttClient.subscribe("/Automat/Aktiv");
+     mqttClient.subscribe("/Automat/beenden");
+    // Alle topics.
+      for (const auto& [topic, value] : mqttClient.getTopics()){
+            Serial.printf("Topic: %s state = %s\r\n",topic.c_str(),value.ultimoEstado.c_str());
+      }
+
+
+
+
   ArduinoOTA
       .onStart([]()
                {
@@ -714,6 +758,35 @@ void loop()
       printCLI("\"?");
     }
   }
+
+if(mqttClient.isPublishReceived()){
+
+       if (mqttClient.topicReceived == "/Automat/Aktiv") {
+           pricemqttstr = mqttClient.valueReceived.c_str();
+           pricemqtt= pricemqttstr.toFloat();
+           aktivmqtt = true;
+           requ_dispenser=1;
+           Serial.println(aktivmqtt);
+           Serial.println(pricemqttstr);
+           Serial.println(pricemqtt);
+
+      }
+
+
+       if (mqttClient.topicReceived == "/Automat/beenden") {
+      aktivmqtt=false;
+      printCLI("End of Session");
+      manualProduct = false;
+
+      }
+
+            Serial.printf("(Publish) Topic: %s Value= %s\r\n",mqttClient.topicReceived.c_str(),mqttClient.valueReceived.c_str());
+      }
+
+
+
+
+
 
   // Handle OTA packets
   ArduinoOTA.handle();

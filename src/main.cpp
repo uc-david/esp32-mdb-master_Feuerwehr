@@ -194,8 +194,9 @@ public:
     sessionDev = dev;
     lcdWrite(0, 0, "Sitzung aktiv:");
     char line2[20];
-    //sprintf(line2, "Guthaben:  %.2f", dev->getCurrentFunds().getValue());
+    sprintf(line2, "Guthaben:  %.2f", dev->getCurrentFunds().getValue());
     lcdWrite(0, 1, line2);
+    mqttClient.publish("/Automat/Status", line2);
     return true;
   }
 
@@ -211,6 +212,8 @@ public:
       // TODO: tell the user its all wrapped up
       lcdWrite(0, 0, "Bezahle-Box bereit");
       lcdWrite(0, 1, "Guthaben:  0.00");
+
+    mqttClient.publish("/Automat/Status", "Guthaben:  0.00");
     }
   }
 
@@ -243,6 +246,7 @@ public:
     lcdWrite(0, 0, "Sitzung aktiv:");
     char line2[20];
     sprintf(line2, "Guthaben:  %.2f", getTotalFunds());
+    mqttClient.publish("/Automat/Status", line2);
     lcdWrite(0, 1, line2);
 
   }
@@ -254,6 +258,7 @@ public:
     char line1[20];
     sprintf(line1, "Produkt %d Preis %.2f", myProduct.getNumber(), c.getValue());
     lcdWrite(0, 1, line1);
+    mqttClient.publish("/Automat/Status", line1);
     char line2[20];
     sprintf(line2, "Produkt: %s", myProduct.getName());
     lcdWrite(0, 2, line2);
@@ -271,6 +276,7 @@ public:
     lcdWrite(0, 0, "Kauf abgelehnt");
     char line1[20];
     sprintf(line1, "Produkt %d Preis %.2f", myProduct.getNumber(), myProduct.getPrice()->getValue());
+    mqttClient.publish("/Automat/Status", line1);
     lcdWrite(0, 1, line1);
     char line2[20];
     sprintf(line2, "Produkt: %s", myProduct.getName());
@@ -632,7 +638,7 @@ void setup()
       
       mqttClient.subscribe("/Automat/Preis");
       mqttClient.subscribe("/Automat/Aktiv");
-     mqttClient.subscribe("/Automat/beenden");
+      mqttClient.subscribe("/Automat/beenden");
     // Alle topics.
       for (const auto& [topic, value] : mqttClient.getTopics()){
             Serial.printf("Topic: %s state = %s\r\n",topic.c_str(),value.ultimoEstado.c_str());

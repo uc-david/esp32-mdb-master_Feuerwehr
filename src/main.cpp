@@ -4,21 +4,8 @@
 #include <vector>
 // LCD over I2C communication
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
-LiquidCrystal_I2C lcd(0x27, 20, 4); // 16x2 LCD Display on I2C address 0x27
-void lcdWrite(uint8_t col, uint8_t row, const char *text)
-{
-  char temp[(17 - col)];
-  int8_t textLen = strlen(text);
-  if (!textLen || textLen > 16)
-    textLen = 16;
-  strcpy(temp, text);
-  for (uint8_t x = textLen; x < sizeof(temp) - 1; x++)
-    temp[x] = ' ';
-  temp[sizeof(temp) - 1] = '\0';
-  lcd.setCursor(col, row);
-  lcd.print(temp);
-}
+
+
 
 // OTA
 #include <ESPmDNS.h>
@@ -77,7 +64,10 @@ uint8_t requ_dispenser = 0;
 uint16_t prod = 0; 
 uint16_t produktmqtt =0;
 float pricemqtt = 0.0;
+unsigned long wd_time_l = 300, wd_ten_l =0;
+unsigned long Sek_timer=0, ten_Sek_timer =0;
 String pricemqttstr = "";
+String wd_time_str = "";
 uint32_t funds = 0;
 String input = "";
 uint8_t newByte = '\0';
@@ -172,8 +162,6 @@ public:
   void requestText(IPaymentDevice *dev, char *msg, uint32_t duration)
   {
     printCLI(msg);
-    lcdWrite(0, 2, msg);
-    lcdWrite(0, 3, &msg[16]);
     // TODO: clear the screen after duration
      Serial.printf("for %d ms\n\r",  duration);
   }
@@ -192,10 +180,8 @@ public:
     printCLI(dev->getDeviceName());
     Serial.printf("\tFunds Available:  %.2f\r\n", getTotalFunds());
     sessionDev = dev;
-    lcdWrite(0, 0, "Sitzung aktiv:");
     char line2[20];
     sprintf(line2, "Guthaben:  %.2f", dev->getCurrentFunds().getValue());
-    lcdWrite(0, 1, line2);
     mqttClient.publish("/Automat/Status", line2);
     return true;
   }
@@ -210,8 +196,7 @@ public:
       sessionDev = nullptr;
       manualProduct = false;
       // TODO: tell the user its all wrapped up
-      lcdWrite(0, 0, "Bezahle-Box bereit");
-      lcdWrite(0, 1, "Guthaben:  0.00");
+
 
     mqttClient.publish("/Automat/Status", "Guthaben:  0.00");
     }
@@ -243,25 +228,24 @@ public:
     // end specific device
 
     // TODO: so something with all the new funds value
-    lcdWrite(0, 0, "Sitzung aktiv:");
     char line2[20];
     sprintf(line2, "Guthaben:  %.2f", getTotalFunds());
     mqttClient.publish("/Automat/Status", line2);
-    lcdWrite(0, 1, line2);
+
 
   }
 
   // event fired when the payment devices authorised the payment
   void vendAccepted(IPaymentDevice *dev, mdbCurrency c)
   {
-    lcdWrite(0, 0, "Kauf genehmigt");
+
     char line1[20];
     sprintf(line1, "Produkt %d Preis %.2f", myProduct.getNumber(), c.getValue());
-    lcdWrite(0, 1, line1);
+  
     mqttClient.publish("/Automat/Status", line1);
     char line2[20];
     sprintf(line2, "Produkt: %s", myProduct.getName());
-    lcdWrite(0, 2, line2);
+  
 
     Serial.printf("Vend Accepted on %s for %.2f\r\n", dev->getDeviceName(), c.getValue());
     vendStart = millis();
@@ -273,14 +257,14 @@ public:
   // event fired when the payment device denies the vend
   void vendDenied(IPaymentDevice *dev)
   {
-    lcdWrite(0, 0, "Kauf abgelehnt");
+  
     char line1[20];
     sprintf(line1, "Produkt %d Preis %.2f", myProduct.getNumber(), myProduct.getPrice()->getValue());
     mqttClient.publish("/Automat/Status", line1);
-    lcdWrite(0, 1, line1);
+  
     char line2[20];
     sprintf(line2, "Produkt: %s", myProduct.getName());
-    lcdWrite(0, 2, line2);
+  
     Serial.printf("Vend Denied on %s\r\n", dev->getDeviceName());
   }
 
@@ -606,16 +590,10 @@ void setup()
 
   xTaskCreatePinnedToCore(MDBRUN, "MDB Master Runner", 2048, NULL, 1, NULL, 1);
 
-  // Screen and Debug Output
-  lcd.init();      // initialize the lcd
-  lcd.backlight(); // and backlight
-  lcd.clear();     // make it blank
 
   Serial.println("Booting");
   Serial.print("ESP-MDB-Master Interface vers.:");
-  lcdWrite(0, 0, "ESP32-VMC booting");
 
-  lcdWrite(0, 1, STR(CODE_VERSION));
   Serial.println(STR(CODE_VERSION));
 
   // enable cli on serial port
@@ -639,6 +617,7 @@ void setup()
       mqttClient.subscribe("/Automat/Preis");
       mqttClient.subscribe("/Automat/Aktiv");
       mqttClient.subscribe("/Automat/beenden");
+      mqttClient.subscribe("/Automat/Watchdog");
     // Alle topics.
       for (const auto& [topic, value] : mqttClient.getTopics()){
             Serial.printf("Topic: %s state = %s\r\n",topic.c_str(),value.ultimoEstado.c_str());
@@ -729,8 +708,19 @@ void setup()
   // DEBUG_VAR(a);
 }
 
+
+
+
+
+
+
 void loop()
 {
+
+
+
+
+
   // mimic Serial Console
   if (Serial.available())
   {
@@ -765,6 +755,10 @@ void loop()
     }
   }
 
+
+
+
+
 if(mqttClient.isPublishReceived()){
 
        if (mqttClient.topicReceived == "/Automat/Aktiv") {
@@ -786,11 +780,49 @@ if(mqttClient.isPublishReceived()){
 
       }
 
+
+
+
+      if (mqttClient.topicReceived == "/Automat/Watchdog") {
+           wd_time_str = mqttClient.valueReceived.c_str();
+           wd_time_l= wd_time_str.toInt();
+          // Serial.println(wd_time_str);
+          // Serial.println(wd_time_l);
+
+      }
+
             Serial.printf("(Publish) Topic: %s Value= %s\r\n",mqttClient.topicReceived.c_str(),mqttClient.valueReceived.c_str());
       }
 
 
+if (millis() > ten_Sek_timer)
+ {ten_Sek_timer=(millis()+10000);
+ wd_ten_l = wd_ten_l+1;
 
+
+    char tenchr[20];
+    sprintf(tenchr, "%2d",wd_ten_l);
+
+ mqttClient.publish("/Automat/WDESP", tenchr);
+Serial.println(wd_ten_l);
+}
+
+
+ 
+
+
+if (millis() > Sek_timer)
+ {Sek_timer=(millis()+1000);
+
+  wd_time_l = wd_time_l-1;  //Comment, if watchdog is not necessary
+Serial.println(wd_time_l);
+}
+
+
+if (wd_time_l <= 0){  //MQTT Watchdog in case of connection problems--> restart
+ ESP.restart();
+Serial.println(wd_time_l);
+}
 
 
 

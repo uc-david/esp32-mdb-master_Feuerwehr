@@ -32,7 +32,7 @@ void mdbMaster::init()
     
     devices[5] = &MDBDevice_Changer;
 
-    MDBDevice_Changer.setActive();
+    //MDBDevice_Changer.setActive();
 
     MDBDevice_Cashless_1.setActive();
     // MDBDevice_Cashless_2.setActive();

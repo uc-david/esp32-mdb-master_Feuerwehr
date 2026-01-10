@@ -527,31 +527,20 @@ void wifiCallback(cmd *c)
     String wiFiPassword = argPw.getValue();
 
     WiFi.begin(wiFiName.c_str(), wiFiPassword.c_str());
-    int tryDelay = 1000;
-    int numberOfTries = 10;
 
     // Wait for the WiFi event
-    while (true)
-    {
-      printWiFiStatus();
-      if (WiFi.status() == WL_CONNECTED)
-      {
-        return;
-      }
-      delay(tryDelay);
+unsigned long start = millis();
 
-      if (numberOfTries <= 0)
-      {
-        Serial.print("[WiFi] Failed to connect to WiFi!");
-        // Use disconnect function to force stop trying to connect
-        WiFi.disconnect();
-        return;
-      }
-      else
-      {
-        numberOfTries--;
-      }
-    }
+while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+    printWiFiStatus();
+    delay(500);
+}
+if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WiFi] Verbindung fehlgeschlagen, fährt neu hoch...");
+    ESP.restart(); // oder alternative Behandlung
+}
+
+
   }
   else if (!strcmp(subCmd.c_str(), "disconnect"))
   {
@@ -763,12 +752,13 @@ if(mqttClient.isPublishReceived()){
 
        if (mqttClient.topicReceived == "/Automat/Aktiv") {
            pricemqttstr = mqttClient.valueReceived.c_str();
-           pricemqtt= pricemqttstr.toFloat();
+           if (pricemqttstr.length() > 0) {
+               pricemqtt = pricemqttstr.toFloat();
+              } else {
+               pricemqtt = 0.0;
+              }
            aktivmqtt = true;
            requ_dispenser=1;
-           Serial.println(aktivmqtt);
-           Serial.println(pricemqttstr);
-           Serial.println(pricemqtt);
 
       }
 
@@ -795,9 +785,12 @@ if(mqttClient.isPublishReceived()){
       }
 
 
-if (millis() > ten_Sek_timer)
- {ten_Sek_timer=(millis()+10000);
- wd_ten_l = wd_ten_l+1;
+
+ if (millis() - ten_Sek_timer >= 10000)
+{
+    ten_Sek_timer = millis();
+    if (wd_ten_l > 0) wd_ten_l--;
+
 
 
     char tenchr[20];
@@ -810,13 +803,13 @@ Serial.println(wd_ten_l);
 
  
 
-
-if (millis() > Sek_timer)
- {Sek_timer=(millis()+1000);
-
-  wd_time_l = wd_time_l-1;  //Comment, if watchdog is not necessary
-Serial.println(wd_time_l);
+if (millis() - Sek_timer >= 1000)
+{
+    Sek_timer = millis();
+    if (wd_time_l > 0) wd_time_l--;
+    Serial.println(wd_time_l);
 }
+
 
 
 if (wd_time_l <= 0){  //MQTT Watchdog in case of connection problems--> restart
@@ -824,10 +817,9 @@ if (wd_time_l <= 0){  //MQTT Watchdog in case of connection problems--> restart
 Serial.println(wd_time_l);
 }
 
+if (telnet.isConnected()) {
+    telnet.loop();
+}
+ArduinoOTA.handle();
 
-
-  // Handle OTA packets
-  ArduinoOTA.handle();
-  // handle telnet packets
-  telnet.loop();
 }

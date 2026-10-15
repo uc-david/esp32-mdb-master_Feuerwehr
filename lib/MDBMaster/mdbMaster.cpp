@@ -14,7 +14,7 @@ uint8_t mdbMaster::deviceResponse[40] = {'\0'};
 uint8_t mdbMaster::deviceResponseLength = 0;
 uint8_t mdbMaster::recFrame[40] = {'\0'};
 uint8_t mdbMaster::recLen = 0;
-uint8_t mdbMaster::dataReceived = 0;
+volatile uint8_t mdbMaster::dataReceived = 0;
 mdbDevice* mdbMaster::devices[32] = {nullptr};
 mdbDevice* mdbMaster::currentDevice = nullptr;
 

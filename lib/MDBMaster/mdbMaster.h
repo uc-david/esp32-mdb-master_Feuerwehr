@@ -32,7 +32,7 @@ class mdbMaster{
         static uint8_t deviceResponseLength;
         static uint8_t recFrame[40];
         static uint8_t recLen;
-        static uint8_t dataReceived;
+        static volatile uint8_t dataReceived;
         static mdbDevice* devices[32];
         static mdbDevice* currentDevice;
 };

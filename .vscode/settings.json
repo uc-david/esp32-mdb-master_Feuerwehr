@@ -55,5 +55,6 @@
         "random": "cpp",
         "string": "cpp",
         "COINCHANGER.H": "cpp"
-    }
+    },
+    "idf.pythonInstallPath": "/opt/homebrew/bin/python3"
 }

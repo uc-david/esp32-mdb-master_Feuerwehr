@@ -108,7 +108,7 @@ void mdbDriver::enable()
 void mdbDriver::start()
 {
   init();
-  xTaskCreatePinnedToCore(swSerialTask, "mdbDriver", 2048, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(swSerialTask, "mdbDriver", 4096, NULL, 1, NULL, 0);
 }
 
 void mdbDriver::send(uint16_t data)
